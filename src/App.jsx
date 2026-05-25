@@ -9,12 +9,6 @@ export default function App() {
 
   const pageSize = 8;
 
-  const API_URLS = [
-    "https://finnhub.io/api/v1/news?category=general&token=d8a5fbpr01qplfv1ppf0d8a5fbpr01qplfv1ppfg",
-    "https://api.marketaux.com/v1/news/all?language=en&api_token=4Dvsebdol5iKuEMfPJEolLSGM1gscIo6xrgEWYFb",
-    "https://www.alphavantage.co/query?function=NEWS_SENTIMENT&apikey=MCM1OJNTO5YZ191T",
-  ];
-
   const normalize = (url, data) => {
     if (url.includes("finnhub")) {
       return (data || []).map((item) => ({
@@ -43,23 +37,14 @@ export default function App() {
     return [];
   };
 
-  const fetchAllNews = async () => {
+  useEffect(() => {
+  const fetchNews = async () => {
     try {
-      const results = await Promise.all(
-        API_URLS.map(async (url) => {
-          const res = await fetch(url);
-          const data = await res.json();
-          return normalize(url, data);
-        })
+      const res = await fetch(
+        "https://finacial-apis.danysamuel.workers.dev/"
       );
-
-      const merged = results.flat();
-
-      const unique = Array.from(
-        new Map(merged.map((item) => [item.title, item])).values()
-      );
-
-      setNews(unique);
+      const data = await res.json();
+      setNews(data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -67,11 +52,9 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    fetchAllNews();
-    const interval = setInterval(fetchAllNews, 20000);
-    return () => clearInterval(interval);
-  }, []);
+  fetchNews();
+}, []);
+
 
   useEffect(() => {
     setCurrentPage(1);
@@ -173,47 +156,75 @@ export default function App() {
       )}
 
       {/* PAGINATION */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          marginTop: "10px",
-          color: "#94a3b8",
-          fontSize: "13px",
-        }}
-      >
-        <button
-          onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-          style={{
-            background: "#1e293b",
-            border: "1px solid #334155",
-            color: "white",
-            padding: "6px 10px",
-            borderRadius: "8px",
-          }}
-        >
-          Prev
-        </button>
+      {/* FLOATING PAGINATION CONTROLS */}
+<div
+  style={{
+    position: "fixed",
+    top: "50%",
+    left: 0,
+    right: 0,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    transform: "translateY(-50%)",
+    pointerEvents: "none", // allow clicks only on buttons
+    padding: "0 10px",
+  }}
+>
+  {/* LEFT - PREV */}
+  <button
+    onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+    style={{
+      pointerEvents: "auto",
+      background: "#1e293b",
+      border: "1px solid #334155",
+      color: "white",
+      padding: "10px 14px",
+      borderRadius: "10px",
+      cursor: "pointer",
+      opacity: currentPage === 1 ? 0.4 : 1,
+    }}
+    disabled={currentPage === 1}
+  >
+    ⬅ Prev
+  </button>
 
-        <span>
-          {currentPage} / {totalPages || 1}
-        </span>
+  {/* CENTER - PAGE INFO */}
+  <div
+    style={{
+      pointerEvents: "none",
+      background: "#0f172a",
+      border: "1px solid #334155",
+      padding: "8px 14px",
+      borderRadius: "999px",
+      fontSize: "13px",
+      color: "#94a3b8",
+      backdropFilter: "blur(10px)",
+    }}
+  >
+    Page {currentPage} / {totalPages || 1}
+  </div>
 
-        <button
-          onClick={() =>
-            setCurrentPage((p) => Math.min(p + 1, totalPages))
-          }
-          style={{
-            background: "#1e293b",
-            border: "1px solid #334155",
-            color: "white",
-            padding: "6px 10px",
-            borderRadius: "8px",
-          }}
-        >
-          Next
-        </button>
-      </div>
+  {/* RIGHT - NEXT */}
+  <button
+    onClick={() =>
+      setCurrentPage((p) => Math.min(p + 1, totalPages))
+    }
+    style={{
+      pointerEvents: "auto",
+      background: "#1e293b",
+      border: "1px solid #334155",
+      color: "white",
+      padding: "10px 14px",
+      borderRadius: "10px",
+      cursor: "pointer",
+      opacity: currentPage === totalPages ? 0.4 : 1,
+    }}
+    disabled={currentPage === totalPages}
+  >
+    Next ➡
+  </button>
+</div>
     </div>
   );
 }
