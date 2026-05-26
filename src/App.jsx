@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 
 export default function App() {
   const [news, setNews] = useState([]);
@@ -7,128 +7,240 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
 
+  const [showControls, setShowControls] = useState(false);
+  const [jumpPage, setJumpPage] = useState("");
+
+  const [sentimentFilter, setSentimentFilter] = useState("ALL");
+  const [assetFilter, setAssetFilter] = useState("ALL");
+
   const pageSize = 8;
 
-  const normalize = (url, data) => {
-    if (url.includes("finnhub")) {
-      return (data || []).map((item) => ({
-        title: item.headline,
-        url: item.url,
-        source: item.source || "finnhub",
-      }));
+  // ----------------------------
+  // SENTIMENT
+  // ----------------------------
+  const getSentiment = (title = "") => {
+    const text = title.toLowerCase();
+
+    const bullishWords = [
+      "surge","rally","gain","up","rise","beat","bullish",
+      "growth","record high","strong","buy","breakout",
+      "optimistic","profit","approval"
+    ];
+
+    const bearishWords = [
+      "crash","drop","fall","down","bearish","selloff",
+      "recession","fear","loss","weak","decline",
+      "inflation","war","bankruptcy","lawsuit"
+    ];
+
+    const bullishScore = bullishWords.filter(w => text.includes(w)).length;
+    const bearishScore = bearishWords.filter(w => text.includes(w)).length;
+
+    if (bullishScore > bearishScore) {
+      return { label: "Bullish", color: "#16a34a", emoji: "🟢" };
     }
 
-    if (url.includes("marketaux")) {
-      return (data.data || []).map((item) => ({
-        title: item.title,
-        url: item.url,
-        source: item.source || "marketaux",
-      }));
+    if (bearishScore > bullishScore) {
+      return { label: "Bearish", color: "#dc2626", emoji: "🔴" };
     }
 
-    if (url.includes("alphavantage")) {
-      return (data.feed || []).map((item) => ({
-        title: item.title,
-        url: item.url,
-        source: item.source || "alphavantage",
-      }));
-    }
-
-    return [];
+    return { label: "Neutral", color: "#64748b", emoji: "⚪" };
   };
 
+  // ----------------------------
+  // ASSET DETECTION
+  // ----------------------------
+  const getAssets = (text = "") => {
+    const t = text.toUpperCase();
+    const assets = [];
+
+    if (t.includes("BTC") || t.includes("BITCOIN")) assets.push("BTC");
+    if (t.includes("ETH") || t.includes("ETHEREUM")) assets.push("ETH");
+    if (t.includes("SOL")) assets.push("SOL");
+
+    if (t.includes("USD")) assets.push("USD");
+    if (t.includes("EUR")) assets.push("EUR");
+    if (t.includes("JPY")) assets.push("JPY");
+    if (t.includes("GBP")) assets.push("GBP");
+
+    if (t.includes("GOLD")) assets.push("GOLD");
+    if (t.includes("OIL") || t.includes("CRUDE")) assets.push("OIL");
+
+    if (t.includes("NASDAQ")) assets.push("NASDAQ");
+    if (t.includes("S&P") || t.includes("SP500")) assets.push("S&P 500");
+    if (t.includes("DOW")) assets.push("DOW");
+
+    return assets.length ? assets : ["UNKNOWN"];
+  };
+
+  // ----------------------------
+  // FETCH NEWS
+  // ----------------------------
   useEffect(() => {
-  const fetchNews = async () => {
-    try {
-      const res = await fetch(
-        "https://finacial-apis.danysamuel.workers.dev/"
-      );
-      const data = await res.json();
-      setNews(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const fetchNews = async () => {
+      try {
+        const res = await fetch(
+          "https://finacial-apis.danysamuel.workers.dev/"
+        );
+        const data = await res.json();
+        setNews(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  fetchNews();
-}, []);
+    fetchNews();
+  }, []);
 
-
+  // reset page
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery]);
+  }, [searchQuery, sentimentFilter, assetFilter]);
 
+  // ----------------------------
+  // BUILD UNIQUE ASSETS LIST (NEW FEATURE)
+  // ----------------------------
+  const allAssets = useMemo(() => {
+    const set = new Set();
+
+    news.forEach(item => {
+      getAssets(item.title).forEach(a => set.add(a));
+    });
+
+    return ["ALL", ...Array.from(set)];
+  }, [news]);
+
+  // ----------------------------
+  // FILTERING
+  // ----------------------------
   const filteredNews = news.filter((item) => {
-    if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
-    return (
+    const sentiment = getSentiment(item.title);
+    const assets = getAssets(item.title);
+
+    const matchesSearch =
+      !searchQuery ||
       item.title?.toLowerCase().includes(q) ||
-      item.source?.toLowerCase().includes(q)
-    );
+      item.source?.toLowerCase().includes(q);
+
+    const matchesSentiment =
+      sentimentFilter === "ALL" ||
+      sentiment.label.toUpperCase() === sentimentFilter;
+
+    const matchesAsset =
+      assetFilter === "ALL" ||
+      assets.includes(assetFilter);
+
+    return matchesSearch && matchesSentiment && matchesAsset;
   });
 
   const totalPages = Math.ceil(filteredNews.length / pageSize);
-  const startIndex = (currentPage - 1) * pageSize;
 
   const paginatedNews = filteredNews.slice(
-    startIndex,
-    startIndex + pageSize
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
   );
+
+  // ----------------------------
+  // KEYBOARD NAV
+  // ----------------------------
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (document.activeElement.tagName === "INPUT") return;
+
+      if (e.key === "ArrowLeft") {
+        setCurrentPage(p => Math.max(p - 1, 1));
+      }
+
+      if (e.key === "ArrowRight") {
+        setCurrentPage(p => Math.min(p + 1, totalPages));
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [totalPages]);
 
   return (
     <div
+      onMouseEnter={() => setShowControls(true)}
+      onMouseLeave={() => setShowControls(false)}
       style={{
-        height: "100vh",
-        width: "100%",
-        overflowX: "hidden",
+        minHeight: "100vh",
         background: "#0f172a",
         color: "white",
-        fontFamily: "Arial",
-        padding: "10px",
-        boxSizing: "border-box",
+        padding: "12px",
+        fontFamily: "Arial"
       }}
     >
       {/* HEADER */}
-      <div style={{ marginBottom: "15px" }}>
-        <h1 style={{ margin: 0, fontSize: "28px" }}>
-          ⚡ Financial News Terminal
-        </h1>
-
-        <p style={{ margin: "5px 0", color: "#94a3b8" }}>
-         • Live aggregated market news •
-        </p>
-      </div>
+      <h1>⚡ Financial News Terminal</h1>
 
       {/* SEARCH */}
       <input
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         placeholder="Search news..."
-        style={{
-          width: "100%",
-          padding: "10px",
-          borderRadius: "8px",
-          border: "1px solid #334155",
-          background: "#0f172a",
-          color: "white",
-          marginBottom: "10px",
-          boxSizing: "border-box",
-        }}
+        style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
       />
 
-      {/* STATUS */}
-      <div style={{ fontSize: "12px", color: "#94a3b8", marginBottom: "10px" }}>
-        🔄 Auto-refresh every 20 seconds • Page {currentPage} / {totalPages || 1}
+      {/* SENTIMENT FILTER */}
+      <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+        {["ALL", "BULLISH", "BEARISH", "NEUTRAL"].map((f) => (
+          <button
+            key={f}
+            onClick={() => setSentimentFilter(f)}
+            style={{
+              padding: "6px 10px",
+              border: "1px solid #334155",
+              background: sentimentFilter === f ? "#1e293b" : "transparent",
+              color: "white",
+              borderRadius: "8px"
+            }}
+          >
+            {f}
+          </button>
+        ))}
       </div>
 
-      {/* LIST */}
+      {/* 🆕 ASSET FILTER TABS */}
+      <div
+        style={{
+          display: "flex",
+          gap: "8px",
+          marginBottom: "15px",
+          flexWrap: "wrap"
+        }}
+      >
+        {allAssets.map((a) => (
+          <button
+            key={a}
+            onClick={() => setAssetFilter(a)}
+            style={{
+              padding: "5px 10px",
+              borderRadius: "8px",
+              border: "1px solid #334155",
+              background: assetFilter === a ? "#1e293b" : "transparent",
+              color: "white",
+              fontSize: "12px"
+            }}
+          >
+            {a}
+          </button>
+        ))}
+      </div>
+
+      {/* NEWS */}
       {loading ? (
-        <p style={{ color: "#94a3b8" }}>Loading...</p>
+        <p>Loading...</p>
       ) : (
-        <div>
-          {paginatedNews.map((item, i) => (
+        paginatedNews.map((item, i) => {
+          const sentiment = getSentiment(item.title);
+          const assets = getAssets(item.title);
+
+          return (
             <a
               key={i}
               href={item.url}
@@ -136,95 +248,96 @@ export default function App() {
               rel="noreferrer"
               style={{
                 display: "block",
-                padding: "12px",
+                padding: "14px",
                 marginBottom: "10px",
-                borderRadius: "10px",
+                borderRadius: "12px",
                 background: "#1e293b",
-                border: "1px solid #334155",
-                textDecoration: "none",
+                border: `1px solid ${sentiment.color}`,
                 color: "white",
+                textDecoration: "none"
               }}
             >
-              <div style={{ fontSize: "11px", color: "#94a3b8" }}>
-                {item.source}
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <div style={{ fontSize: "11px", color: "#94a3b8" }}>
+                  {item.source}
+                </div>
+
+                <div
+                  style={{
+                    background: sentiment.color,
+                    padding: "4px 10px",
+                    borderRadius: "999px",
+                    fontSize: "11px"
+                  }}
+                >
+                  {sentiment.emoji} {sentiment.label}
+                </div>
               </div>
 
-              <div style={{ fontSize: "14px" }}>{item.title}</div>
+              <div style={{ marginTop: "8px", fontSize: "15px" }}>
+                {item.title}
+              </div>
+
+              <div style={{ marginTop: "8px", fontSize: "12px", color: "#94a3b8" }}>
+                📊 {assets.join(", ")}
+              </div>
             </a>
-          ))}
-        </div>
+          );
+        })
       )}
 
-      {/* PAGINATION */}
-      {/* FLOATING PAGINATION CONTROLS */}
-<div
-  style={{
-    position: "fixed",
-    top: "50%",
-    left: 0,
-    right: 0,
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    transform: "translateY(-50%)",
-    pointerEvents: "none", // allow clicks only on buttons
-    padding: "0 10px",
-  }}
->
-  {/* LEFT - PREV */}
-  <button
-    onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-    style={{
-      pointerEvents: "auto",
-      background: "#1e293b",
-      border: "1px solid #334155",
-      color: "white",
-      padding: "10px 14px",
-      borderRadius: "10px",
-      cursor: "pointer",
-      opacity: currentPage === 1 ? 0.4 : 1,
-    }}
-    disabled={currentPage === 1}
-  >
-    ⬅ Prev
-  </button>
+      {/* CENTER PAGINATION (UNCHANGED FEATURE) */}
+      <div
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+          background: "rgba(15,23,42,0.95)",
+          border: "1px solid #334155",
+          padding: "10px 14px",
+          borderRadius: "999px",
+          backdropFilter: "blur(12px)",
+          opacity: showControls ? 1 : 0,
+          transition: "0.25s ease",
+          pointerEvents: "auto"
+        }}
+      >
+        <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}>
+          ⬅
+        </button>
 
-  {/* CENTER - PAGE INFO */}
-  <div
-    style={{
-      pointerEvents: "none",
-      background: "#0f172a",
-      border: "1px solid #334155",
-      padding: "8px 14px",
-      borderRadius: "999px",
-      fontSize: "13px",
-      color: "#94a3b8",
-      backdropFilter: "blur(10px)",
-    }}
-  >
-    Page {currentPage} / {totalPages || 1}
-  </div>
+        <span>
+          {currentPage} / {totalPages || 1}
+        </span>
 
-  {/* RIGHT - NEXT */}
-  <button
-    onClick={() =>
-      setCurrentPage((p) => Math.min(p + 1, totalPages))
-    }
-    style={{
-      pointerEvents: "auto",
-      background: "#1e293b",
-      border: "1px solid #334155",
-      color: "white",
-      padding: "10px 14px",
-      borderRadius: "10px",
-      cursor: "pointer",
-      opacity: currentPage === totalPages ? 0.4 : 1,
-    }}
-    disabled={currentPage === totalPages}
-  >
-    Next ➡
-  </button>
-  </div>
+        <input
+          type="number"
+          value={jumpPage}
+          onChange={(e) => setJumpPage(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              const page = Number(jumpPage);
+              if (page >= 1 && page <= totalPages) setCurrentPage(page);
+              setJumpPage("");
+            }
+          }}
+          style={{
+            width: "50px",
+            textAlign: "center",
+            background: "#0f172a",
+            color: "white",
+            border: "1px solid #334155"
+          }}
+        />
+
+        <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}>
+          ➡
+        </button>
+      </div>
     </div>
   );
 }
